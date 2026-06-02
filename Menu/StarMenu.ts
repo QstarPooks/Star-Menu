@@ -1018,15 +1018,15 @@ Il2Cpp.perform(() => {
                 toolTip: "Duplicates items ejected from the stash trash chute."
             }),
             new ButtonInfo({
-                buttonText: "Change Eject Amount: " + ejectAmounts[ejectAmountIndex] + "x",
+                buttonText: "Cycle Eject Amount",
                 method: () => {
                     ejectAmountIndex = (ejectAmountIndex + 1) % ejectAmounts.length;
                     ejectAmount = ejectAmounts[ejectAmountIndex];
-                    sendNotification("Eject amount set to " + ejectAmount + "x", false);
+                    sendNotification("Eject amount: " + ejectAmount + "x", false);
                     reloadMenu();
                 },
                 isTogglable: false,
-                toolTip: "Cycles how many copies are ejected. Cycles: 1x -> 5x -> 10x -> 25x -> 50x."
+                toolTip: "Cycles how many copies are ejected (1x/5x/10x/25x/50x)."
             }),
         ],
 
@@ -1086,12 +1086,8 @@ Il2Cpp.perform(() => {
         ],
     ];
 
-    // ── Flat button map for O(1) lookup by name ───────────────────────────────
-    const buttonMap: Map<string, ButtonInfo> = new Map();
-    buttons.flat().forEach(b => buttonMap.set(b.buttonText, b));
-
-    function getIndex(buttonText: string): ButtonInfo {
-        return buttonMap.get(buttonText);
+    function getIndex(buttonText: string): ButtonInfo | undefined {
+        return buttons.flat().find(b => b.buttonText === buttonText);
     }
 
     // ── renderMenu ────────────────────────────────────────────────────────────
@@ -1120,8 +1116,15 @@ Il2Cpp.perform(() => {
 
         // Notification / selected item display
         if (time > notifactionResetTime) currentNotification = "";
-        renderMenuText(canvasObject, currentNotification !== "" ? currentNotification : "Item: " + getItemName(selectedItemID),
-            textColor, [0.11, 0, 0.275], [1, 0.1]);
+        let statusText = currentNotification;
+        if (statusText === "") {
+            if (currentCategory === 2) {
+                statusText = "Eject: " + ejectAmount + "x | Item: " + getItemName(selectedItemID);
+            } else {
+                statusText = "Item: " + getItemName(selectedItemID);
+            }
+        }
+        renderMenuText(canvasObject, statusText, textColor, [0.11, 0, 0.275], [1, 0.1]);
 
         // ── Disconnect button (always visible) ────────────────────────────────
         const disconnectBtn = createObject([0.1, 0.0, 0.225], identityQuaternion, [0.09, 0.9, 0.08], 3, buttonColor, getTransform(menu));
@@ -1185,11 +1188,17 @@ Il2Cpp.perform(() => {
     // ── Button click hook ─────────────────────────────────────────────────────
     const ButtonActivation = GorillaReportButton.method("OnTriggerEnter");
     ButtonActivation.implementation = function(collider: any) {
-        const rawName = this.method("get_name").invoke().toString();
+        const nameObj = this.method("get_name").invoke();
+        const rawName = (() => {
+            try { return nameObj.content; } catch(_) {}
+            const s = nameObj.toString();
+            if (s.length >= 2 && s[0] === '"' && s[s.length - 1] === '"') return s.slice(1, -1);
+            return s;
+        })();
 
-        if (rawName.length > 1 && rawName[1] === "@") {
-            if (collider.handle.equals(referenceCollider.handle)) {
-                const goName = rawName.substring(2, rawName.length - 1);
+        if (rawName.length > 0 && rawName[0] === '@') {
+            if (referenceCollider && collider.handle.equals(referenceCollider.handle)) {
+                const goName = rawName.substring(1);
                 const _time  = Time.method("get_time").invoke();
 
                 if (_time > buttonClickDelay) {
@@ -1313,7 +1322,7 @@ Il2Cpp.perform(() => {
         }
 
         if (menu == null) {
-            if (reference != null) { Destroy(reference); reference = null; }
+            if (reference != null) { Destroy(reference); reference = null; referenceCollider = null; }
         } else {
             if (reference == null) renderReference();
         }
